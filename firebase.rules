@@ -1,0 +1,52 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+    
+    function isContractorOrAdmin() {
+      let userRole = get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+      return userRole == 'contractor' || userRole == 'admin';
+    }
+    
+    function isClient() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'client';
+    }
+    
+    function isValidJob() {
+      return request.resource.data.keys().hasAll([
+        'title', 'description', 'category', 'state', 'county',
+        'clientId', 'clientName', 'clientEmail', 'clientPhone'
+      ]);
+    }
+
+    // Jobs collection rules
+    match /jobs/{jobId} {
+      allow read: if true;
+      allow create: if isAuthenticated() && isClient() && isValidJob();
+      allow update: if isAuthenticated() && (
+        isOwner(resource.data.clientId) || 
+        isContractorOrAdmin()
+      );
+      allow delete: if isAuthenticated() && (
+        isOwner(resource.data.clientId) || 
+        isContractorOrAdmin()
+      );
+    }
+
+    // Users collection rules
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && (
+        isOwner(userId) || 
+        isContractorOrAdmin()
+      );
+    }
+  }
+}
